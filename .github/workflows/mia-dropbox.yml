@@ -1,30 +1,40 @@
 name: MIA ➜ Dropbox
 
 on:
-  workflow_dispatch:       # lancement manuel
+  workflow_dispatch:      # lancement manuel (bouton « Run workflow »)
 
 jobs:
   mirror:
     runs-on: ubuntu-latest
+    timeout-minutes: 720  # 12 h pour laisser les 700 Go passer sans coupure
 
     steps:
+      # — 1) rclone prêt à l’emploi -----------------------------------------
       - name: Installe rclone
         uses: AnimMouse/setup-rclone@v1
 
+      # — 2) Recense tous les fichiers du site -------------------------------
       - name: Liste tous les fichiers MIA
         run: |
-          wget --spider --recursive --quiet --no-parent \
+          set -euo pipefail
+          wget --spider --recursive --no-parent \
+               --progress=dot:giga --timeout=20 \
                --accept pdf,txt,epub,html \
                --output-file=wget.log https://www.marxists.org/
           grep '^--...https' wget.log | awk '{print $3}' > urls.txt
+          echo ">>> $(wc -l < urls.txt) URL listées"
 
+      # — 3) Envoie direct vers Dropbox --------------------------------------
       - name: Stream vers Dropbox
         env:
           RCLONE_CONFIG_DROPBOX_TYPE: dropbox
           RCLONE_CONFIG_DROPBOX_TOKEN: ${{ secrets.DROPBOX_TOKEN }}
         run: |
-          cat urls.txt | while read u; do
+          set -euo pipefail
+          cat urls.txt | while read -r u; do
             rclone copyurl "$u" "dropbox:/MIA${u#https://www.marxists.org/}" \
-                   --auto-filename --no-update-modtime --transfers=8 \
+                   --auto-filename --no-update-modtime \
+                   --transfers=8 \
+                   --stats 30s --stats-one-line \
                    --low-level-retries 10
           done
