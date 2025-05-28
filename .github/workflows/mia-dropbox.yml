@@ -1,0 +1,30 @@
+name: MIA ➜ Dropbox
+
+on:
+  workflow_dispatch:       # lancement manuel
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Installe rclone
+        uses: AnimMouse/setup-rclone@v1
+
+      - name: Liste tous les fichiers MIA
+        run: |
+          wget --spider --recursive --quiet --no-parent \
+               --accept pdf,txt,epub,html \
+               --output-file=wget.log https://www.marxists.org/
+          grep '^--...https' wget.log | awk '{print $3}' > urls.txt
+
+      - name: Stream vers Dropbox
+        env:
+          RCLONE_CONFIG_DROPBOX_TYPE: dropbox
+          RCLONE_CONFIG_DROPBOX_TOKEN: ${{ secrets.DROPBOX_TOKEN }}
+        run: |
+          cat urls.txt | while read u; do
+            rclone copyurl "$u" "dropbox:/MIA${u#https://www.marxists.org/}" \
+                   --auto-filename --no-update-modtime --transfers=8 \
+                   --low-level-retries 10
+          done
